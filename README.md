@@ -14,3 +14,7 @@ Run this command in your terminal:
 
 ruff format . && ruff check . && pytest -v
 
+## Lab 11 - Local Model
+
+The model answered well when asked about approved discount levels it correctly listed 5%, 10%, and 15% from the instructions. It sometimes tried to invent a price when asked about an unknown SKU instead of saying it did not know. I kept price lookups and handoff words (refund, complaint, supervisor, issue) in code because those answers must be exact and should never come from the model. Everything else is left to the model so the assistant can still hold a normal conversation.
+
