@@ -22,3 +22,22 @@ class PriceValidator:
             if key.lower() == sku.lower():
                 return self.base_prices[key]
         return None
+
+    def lookup_price(self, sku):
+        """Look up the approved price for one SKU.
+
+        Args:
+            sku: The part number/SKU, like MW-100.
+        """
+        found = self.find_sku(sku)
+        if found is None:
+            return "No SKU with that part number was found. SKUs look like MW-100."
+        price = self.get_standard_price(found)
+        return f"The approved price for {found} is {price}."
+
+    def change_price(self, sku, new_price):
+        """Change the approved price for one SKU. Only an approval calls this."""
+        for key in self.base_prices:
+            if key.lower() == sku.lower():
+                self.base_prices[key] = new_price
+                return f"The approved price for {key} has been changed to {new_price}."

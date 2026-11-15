@@ -1,61 +1,78 @@
 # tests/test_my_assistant.py
-# Author: William Bundy
+# Author: Will Bundy
 
-"""Tests for the PricingAssistant class and PriceValidator tool."""
+"""Tests for the PricingAssistant class and related tools."""
 
-from mock_model import MockModel
+from fake_model import FakeModel
 from my_assistant import PricingAssistant
 from my_tool import PriceValidator
+from price_change_queue import PriceChangeQueue
+from pricing_toolbox import PricingToolbox
 
 
 class SilentModel:
-    """A model that never has an answer. It stands in for Ollama being switched off."""
+    """A model that never has an answer."""
 
-    def reply(self, instructions, history):
+    def decide(self, instructions, history, tools):
         return None
 
 
-def make_assistant():
-    """Build a fresh assistant with its own tool and mock model for each test."""
-    tool = PriceValidator({"MW-100": "$22.99", "MW-200": "$34.99"})
-    return PricingAssistant("DataPipelineBot", "Validate prices", tool, MockModel())
+def make_tools():
+    """Build fresh tools for each test."""
+    prices = {"MW-100": "$22.99", "MW-200": "$34.99"}
+    price_tool = PriceValidator(prices)
+    change_queue = PriceChangeQueue(price_tool)
+    return PricingToolbox(price_tool, change_queue)
 
 
-def test_tool_finds_standard_price():
-    """Test that the price lookup tool returns the right price."""
-    tool = PriceValidator({"MW-100": "$22.99"})
-    assert tool.get_standard_price("MW-100") == "$22.99"
+def make_assistant(model):
+    """Build a fresh assistant with the given model."""
+    return PricingAssistant("DataPipelineBot", "Validate prices.", make_tools(), model)
 
 
-def test_assistant_validates_sku_price():
-    """Test that the assistant responds with the product price."""
-    bot = make_assistant()
-    reply = bot.respond("Can you check price for MW-100?")
-    assert "$22.99" in reply
+def ask_for_tool(name, arguments):
+    """Build the decision a model returns when it wants a tool."""
+    return {"tool": name, "arguments": arguments}
 
 
-def test_assistant_handles_unknown_sku():
-    """Test that the assistant asks for a valid SKU when an unknown product is provided."""
-    bot = make_assistant()
-    reply = bot.respond("Check price for MW-999")
-    assert "SKU" in reply
+def test_lookup_price_tool():
+    tools = make_tools()
+    assert "22.99" in tools.price_tool.lookup_price("MW-100")
+    assert "no sku" in tools.price_tool.lookup_price("MW-999").lower()
 
 
-def test_assistant_handoff_to_supervisor():
-    """Test that handoff words trigger a human supervisor."""
-    bot = make_assistant()
-    reply = bot.respond("I have a supervisor issue with my order")
-    assert "supervisor" in reply
+def test_price_change_waits_for_approval():
+    tools = make_tools()
+    tools.change_queue.request_price_change("MW-100", "$19.99")
+    assert len(tools.change_queue.waiting()) == 1
+    assert tools.price_tool.base_prices["MW-100"] == "$22.99"  # not changed yet
 
 
-def test_other_messages_go_to_the_model():
-    """Test that messages with no rule go to the model."""
-    bot = make_assistant()
-    assert bot.respond("hello") == "Hello! How can I help you today?"
+def test_approve_makes_the_change_once():
+    tools = make_tools()
+    tools.change_queue.request_price_change("MW-100", "$19.99")
+    assert tools.change_queue.approve(1) == "Request 1 approved."
+    assert tools.price_tool.base_prices["MW-100"] == "$19.99"
+    assert tools.change_queue.approve(1) == "Request 1 is already approved."
 
 
-def test_unknown_request_gets_a_safe_reply():
-    """Test the safe reply when the model has no answer."""
-    tool = PriceValidator({"MW-100": "$22.99"})
-    bot = PricingAssistant("DataPipelineBot", "Validate prices", tool, SilentModel())
-    assert "try again" in bot.respond("What is your favorite color?")
+def test_made_up_sku_is_refused():
+    model = FakeModel(
+        [
+            ask_for_tool("lookup_price", {"sku": "MW-999"}),
+            {"text": "I need a valid SKU."},
+        ]
+    )
+    bot = make_assistant(model)
+    bot.respond("What is the price of MW-100?")  # customer never said MW-999
+    assert "has not given that SKU" in bot.history[1]["content"]
+
+
+def test_handoff_still_works():
+    bot = make_assistant(FakeModel([]))
+    assert "supervisor" in bot.respond("I have a complaint about pricing")
+
+
+def test_safe_reply_when_model_is_down():
+    bot = make_assistant(SilentModel())
+    assert "try again" in bot.respond("hello")

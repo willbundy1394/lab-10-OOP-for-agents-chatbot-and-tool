@@ -2,53 +2,60 @@
 # Author: Will Bundy
 
 HANDOFF_WORDS = ["issue", "refund", "supervisor", "complaint"]
+MAX_TOOL_ROUNDS = 3
 
 
 class PricingAssistant:
-    """A pricing validation assistant inspired by my work in automated data pipelines."""
+    """A pricing validation assistant. The model decides. The toolbox checks every tool request."""
 
-    def __init__(self, name, instructions, price_tool, model):
-        """Set up the assistant with a name, instructions, tool, model, and history."""
+    def __init__(self, name, instructions, tools, model):
+        """Set up one assistant with its own name, instructions, tools, model, and history."""
         self.name = name
         self.instructions = instructions
-        self.price_tool = price_tool
+        self.tools = tools
         self.model = model
         self.history = []
 
     def respond(self, user_message):
-        """Record the user message, choose a reply, record it, and return it."""
+        """Record the user's message, choose a reply, record it, and return it."""
         self.history.append({"role": "user", "content": user_message})
         reply = self.choose_reply(user_message)
         self.history.append({"role": "assistant", "content": reply})
         return reply
 
     def choose_reply(self, user_message):
-        """Use a rule when one applies. Otherwise ask the model."""
-        text = user_message.lower()
-        if self.needs_human(text):
+        """Pass sensitive questions to a person. Send everything else to the model."""
+        if self.needs_human(user_message.lower()):
             return "I am handing this off to our team's supervisor."
-        if "price" in text or "sku" in text:
-            return self.price_reply(user_message)
         return self.model_reply()
 
-    def model_reply(self):
-        """Ask the model for a reply. Give a safe answer if the model has none."""
-        reply = self.model.reply(self.instructions, self.history)
-        if reply is None:
-            return "Sorry, I can't answer that right now. Please try again in a moment."
-        return reply
-
     def needs_human(self, text):
-        """Return True if any handoff word is in text."""
+        """Return True if the message is about something a person must handle."""
         for word in HANDOFF_WORDS:
             if word in text:
                 return True
         return False
 
-    def price_reply(self, user_message):
-        """Look up SKU in tool and return standard price."""
-        sku = self.price_tool.find_sku(user_message)
-        if sku is None:
-            return "Which SKU? Please name a valid part number."
-        price = self.price_tool.get_standard_price(sku)
-        return f"The standard price for {sku} is {price}."
+    def model_reply(self):
+        """Ask the model. Run each tool it asks for, then ask again, up to a limit."""
+        rounds = 0
+        while rounds < MAX_TOOL_ROUNDS:
+            tool_list = self.tools.tool_list()
+            decision = self.model.decide(self.instructions, self.history, tool_list)
+            if decision is None:
+                return "Sorry, I can't answer that right now. Please try again in a moment."
+            if "text" in decision:
+                return decision["text"]
+            name = decision["tool"]
+            arguments = decision["arguments"]
+            result = self.tools.run(name, arguments, self.history)
+            self.history.append(
+                {
+                    "role": "tool",
+                    "tool_name": name,
+                    "arguments": arguments,
+                    "content": result,
+                }
+            )
+            rounds += 1
+        return "Sorry, I couldn't finish that. I'm passing you to a supervisor."
