@@ -1,13 +1,13 @@
 # my_main.py
 # Author: Will Bundy
 
-from my_assistant import PricingAssistant
-from my_tool import PriceValidator
-from price_change_queue import PriceChangeQueue
-from pricing_toolbox import PricingToolbox
-from ollama_model import OllamaModel
 from fallback_model import FallbackModel
 from keyword_model import KeywordModel
+from my_assistant import PricingAssistant
+from my_tool import PriceValidator
+from ollama_model import OllamaModel
+from price_change_queue import PriceChangeQueue
+from pricing_toolbox import PricingToolbox
 
 BASE_PRICES = {
     "MW-100": "$22.99",

@@ -3,13 +3,12 @@
 
 from change_queue import ChangeQueue
 from chatbot import SupportChatbot
+from fallback_model import FallbackModel
+from keyword_model import KeywordModel
 from ollama_model import OllamaModel
 from order_tool import OrderLookup
 from stock_tool import StockLookup
 from toolbox import Toolbox
-from fallback_model import FallbackModel
-from keyword_model import KeywordModel
-
 
 MODEL_NAME = "granite4.1:3b"
 
